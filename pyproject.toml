@@ -1,0 +1,21 @@
+[project]
+name = "academic-search"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "black>=23.3.0",
+    "flake8>=6.0.0",
+    "huggingface>=0.0.1",
+    "mypy>=1.3.0",
+    "nltk>=3.8.1",
+    "numpy>=1.24.3",
+    "pydantic>=2.0.0",
+    "pytest>=7.4.0",
+    "requests>=2.32.4",
+    "sentence-transformers>=2.2.2",
+    "tqdm>=4.66.1",
+    "weaviate>=0.1.2",
+    "weaviate-client>=3.22.1",
+]
