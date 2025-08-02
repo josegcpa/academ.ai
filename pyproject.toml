@@ -1,5 +1,5 @@
 [project]
-name = "academic-search"
+name = "academ_ai"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -19,3 +19,14 @@ dependencies = [
     "weaviate>=0.1.2",
     "weaviate-client>=3.22.1",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/academ_ai"]
+
+[project.scripts]
+retrieve_papers = "academ_ai.retrieve:main"
+build_rag_db = "academ_ai.build_rag_db:main"
