@@ -3,6 +3,7 @@ import sqlite3
 import weaviate
 import weaviate.classes as wvc
 from weaviate.classes.init import AdditionalConfig, Timeout
+from weaviate.classes.query import MetadataQuery
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 WEAVIATE_URL = os.environ.get("WEAVIATE_URL", "localhost")
 WEAVIATE_PORT = os.environ.get("WEAVIATE_PORT", 8080)
 GRPC_PORT = os.environ.get("GRPC_PORT", 50051)
+
+DEFAULT_QUERY_KWARGS = {"alpha": 0.3}
 DEFAULT_BATCH_SIZE = 100
 CHUNK_OVERLAP = 2
 
@@ -48,14 +51,14 @@ class PaperChunk:
     category: str
 
 
-class RAGDatabaseBuilder:
+class RAGDatabase:
     """
     Builds a RAG database from SQLite papers database.
     """
 
     def __init__(
         self,
-        db_path: str,
+        db_path: str = None,
         model_name: str = EMBEDDING_MODEL_NAME,
         weaviate_url: str = WEAVIATE_URL,
         weaviate_port: int = WEAVIATE_PORT,
@@ -64,10 +67,14 @@ class RAGDatabaseBuilder:
         Initialize the RAG database builder.
 
         Args:
-            db_path: Path to the SQLite database
-            model_name: Name of the HuggingFace model to use for embeddings
-            weaviate_url: URL of the Weaviate instance
-            weaviate_port: Port of the Weaviate instance
+            db_path (str, optional): Path to the SQLite database. Defaults to
+                None.
+            model_name (str, optional): Name of the HuggingFace model to use for
+                embeddings. Defaults to EMBEDDING_MODEL_NAME.
+            weaviate_url (str, optional): URL of the Weaviate instance. Defaults
+                to WEAVIATE_URL.
+            weaviate_port (int, optional): Port of the Weaviate instance. Defaults
+                to WEAVIATE_PORT.
         """
         self.db_path = db_path
         self.model_name = model_name
@@ -513,6 +520,10 @@ class RAGDatabaseBuilder:
         Returns:
             bool: True if the operation was successful, False otherwise
         """
+        if self.db_path is None:
+            logger.error("Database path (db_path) not provided")
+            return False
+
         # Connect to databases
         if not self.connect_to_database():
             return False
@@ -569,6 +580,47 @@ class RAGDatabaseBuilder:
                 self.conn.close()
                 logger.info("Database connection closed")
 
+    def query_text(
+        self, text: str, limit: int = 10, query_kwargs: dict[str, Any] = None
+    ) -> list[PaperChunk]:
+        """
+        Query the RAG database for papers similar to the given text.
+
+        Args:
+            text (str): The text to query.
+            limit (int, optional): The maximum number of results to return.
+                Defaults to 10.
+            query_kwargs (dict[str, Any], optional): Additional keyword arguments
+                to pass to the query. Defaults to None.
+
+        Returns:
+            List of PaperChunk objects similar to the given text
+        """
+        # Initialize embedding model
+        self.connect_to_weaviate()
+        self.initialize_embedding_model()
+
+        if query_kwargs is None:
+            query_kwargs = {}
+            query_kwargs.update(DEFAULT_QUERY_KWARGS)
+
+        collection = self.weaviate_client.collections.get("PaperChunk")
+        result = collection.query.hybrid(
+            query=None,
+            query_properties=["text", "title"],
+            vector=self.embed_texts([text])[0],
+            limit=limit,
+            return_metadata=MetadataQuery(score=True, explain_score=True),
+            **query_kwargs,
+        )
+
+        return result
+
+    def __del__(self):
+        if hasattr(self, "weaviate_client"):
+            self.weaviate_client.close()
+            logger.info("Weaviate connection closed")
+
 
 def main():
     """
@@ -614,9 +666,7 @@ def main():
     args = parser.parse_args()
 
     # Initialize the RAG database builder
-    rag_builder = RAGDatabaseBuilder(
-        model_name=args.model, db_path=args.db_path
-    )
+    rag_builder = RAGDatabase(model_name=args.model, db_path=args.db_path)
 
     # Handle schema reset if requested
     if args.reset:
