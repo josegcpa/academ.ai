@@ -11,7 +11,7 @@ services:
     image: cr.weaviate.io/semitechnologies/weaviate:1.32.1
     ports:
     - ${WEAVIATE_PORT}:${WEAVIATE_PORT}
-    - ${GRPC_PORT}:${GRPC_PORT}
+    - ${GRPC_PORT}:50051
     volumes:
     - weaviate_data:/var/lib/weaviate
     restart: on-failure:0
