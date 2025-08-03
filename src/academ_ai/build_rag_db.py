@@ -1,3 +1,4 @@
+from ast import Pass
 import re
 import os
 import sqlite3
@@ -18,10 +19,13 @@ EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 WEAVIATE_URL = os.environ.get("WEAVIATE_URL", "localhost")
 WEAVIATE_PORT = os.environ.get("WEAVIATE_PORT", 8080)
 GRPC_PORT = os.environ.get("GRPC_PORT", 50051)
+EMBEDDING_MODEL_NAME = os.environ.get(
+    "EMBEDDING_MODEL_NAME", EMBEDDING_MODEL_NAME
+)
 
 DEFAULT_QUERY_KWARGS = {"alpha": 0.3}
 DEFAULT_BATCH_SIZE = 100
-CHUNK_OVERLAP = 2
+CHUNK_OVERLAP = 1
 
 import logging
 
@@ -50,6 +54,8 @@ class PaperChunk:
     title: str
     authors: list[str]
     category: str
+    start: int
+    end: int
 
 
 class RAGDatabase:
@@ -144,60 +150,56 @@ class RAGDatabase:
             List of text chunks
         """
         # Split into sentences
-        sentences = nltk.sent_tokenize(abstract)
+        tokenizer = nltk.tokenize.PunktSentenceTokenizer()
+        spans = list(tokenizer.span_tokenize(abstract))
+        sentences = [abstract[start:end] for start, end in spans]
         chunks = []
-        current_chunk = []
-        current_length = 0
+        n_sentences = 1 + CHUNK_OVERLAP
 
-        i = 0
-        while i < len(sentences):
-            sentence = sentences[i]
-            words = sentence.split()
-
-            # If sentence meets minimum length requirement
-            if len(words) >= min_sentence_length:
-                # If we have a chunk in progress, save it and start a new one with overlap
-                if current_chunk:
-                    chunks.append(" ".join(current_chunk))
-                    # Start new chunk with overlap
-                    overlap = (
-                        current_chunk[-CHUNK_OVERLAP:]
-                        if len(current_chunk) > CHUNK_OVERLAP
-                        else current_chunk
-                    )
-                    current_chunk = overlap.copy()
-                    current_length = sum(len(s.split()) for s in current_chunk)
-
-                # Add current sentence to new chunk
-                current_chunk.append(sentence)
-                current_length += len(words)
-                i += 1
+        curr_n_sentences = 0
+        curr_chunk = []
+        curr_ch_len = []
+        for i, sentence in enumerate(sentences):
+            n_words = len(sentence.split())
+            if n_words >= min_sentence_length:
+                curr_chunk.append(i)
+                curr_n_sentences += 1
+                curr_ch_len.append(n_words)
             else:
-                # Sentence is too short, add to current chunk
-                current_chunk.append(sentence)
-                current_length += len(words)
-                i += 1
+                curr_chunk.append(i)
+                curr_ch_len.append(n_words)
+            if all(
+                [
+                    curr_n_sentences >= n_sentences,
+                    sum(curr_ch_len) >= min_chunk_length,
+                ]
+            ):
+                chunks.append(curr_chunk)
+                curr_chunk = []
+                curr_n_sentences = 0
+                curr_ch_len = []
 
-                # If we've reached the minimum chunk length, save it
-                if (
-                    current_length >= min_chunk_length
-                    and len(current_chunk) > 1
-                ):
-                    chunks.append(" ".join(current_chunk))
-                    # Start new chunk with overlap
-                    overlap = (
-                        current_chunk[-CHUNK_OVERLAP:]
-                        if len(current_chunk) > CHUNK_OVERLAP
-                        else current_chunk
+        if curr_chunk and sum(curr_ch_len) >= min_chunk_length:
+            chunks.append(curr_chunk)
+
+        chunked_sents, chunked_spans = [], []
+        for i, chunk in enumerate(chunks):
+            curr_spans = [spans[j] for j in chunk]
+            curr_sents = [sentences[j] for j in chunk]
+            chunked_sents.append(" ".join(curr_sents))
+            chunked_spans.append((curr_spans[0][0], curr_spans[-1][1]))
+            if i < len(chunks) - 1 and CHUNK_OVERLAP > 0:
+                next_spans = [spans[j] for j in chunks[i + 1]]
+                next_sents = [sentences[j] for j in chunks[i + 1]]
+                for j in range(1, CHUNK_OVERLAP + 1):
+                    chunked_sents.append(
+                        " ".join(curr_sents[j:] + next_sents[:j])
                     )
-                    current_chunk = overlap.copy()
-                    current_length = sum(len(s.split()) for s in current_chunk)
+                    chunked_spans.append(
+                        (curr_spans[j][0], next_spans[j - 1][1])
+                    )
 
-        # Add the last chunk if it's not empty
-        if current_chunk and (current_length >= min_chunk_length or not chunks):
-            chunks.append(" ".join(current_chunk))
-
-        return chunks
+        return chunked_sents, chunked_spans
 
     def create_paper_chunks(
         self, papers: list[dict[str, Any]]
@@ -218,7 +220,7 @@ class RAGDatabase:
             if not abstract:
                 continue
 
-            chunks = self.chunk_abstract(abstract)
+            chunks, spans = self.chunk_abstract(abstract)
 
             for i, chunk_text in enumerate(chunks):
                 paper_chunk = PaperChunk(
@@ -228,6 +230,8 @@ class RAGDatabase:
                     title=paper["title"],
                     authors=paper["authors"],
                     category=paper["category"],
+                    start=spans[i][0],
+                    end=spans[i][1],
                 )
                 paper_chunks.append(paper_chunk)
 
@@ -289,6 +293,16 @@ class RAGDatabase:
                     name="title",
                     data_type=wvc.config.DataType.TEXT,
                     description="Title of the paper",
+                ),
+                wvc.config.Property(
+                    name="span_start",
+                    data_type=wvc.config.DataType.INT,
+                    description="The index of the start of the chunk in the abstract",
+                ),
+                wvc.config.Property(
+                    name="span_end",
+                    data_type=wvc.config.DataType.INT,
+                    description="The index of the end of the chunk in the abstract",
                 ),
             ],
             "references": [
@@ -451,7 +465,8 @@ class RAGDatabase:
         Initialize the embedding model.
         """
         logger.info(f"Loading embedding model: {self.model_name}")
-        self.embedding_model = SentenceTransformer(self.model_name)
+        if not self.embedding_model:
+            self.embedding_model = SentenceTransformer(self.model_name)
         logger.info("Embedding model loaded")
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
@@ -561,6 +576,8 @@ class RAGDatabase:
                     "title": chunk.title,
                     "authors": chunk.authors,
                     "category": chunk.category,
+                    "span_start": chunk.start,
+                    "span_end": chunk.end,
                     "vector": vector,
                 }
                 objects.append(obj)
@@ -749,13 +766,13 @@ class RAGDatabase:
                         "category": abstract_obj.properties["category"],
                         "retrieved_chunks": [],
                     }
-                text_string = re.escape(object.properties["text"].strip())
-                search_obj = re.search(text_string, abstract)
-                span = search_obj.span() if search_obj else None
                 grouped_results[paper_id]["retrieved_chunks"].append(
                     {
                         "text": object.properties["text"],
-                        "span": span,
+                        "span": (
+                            object.properties["span_start"],
+                            object.properties["span_end"],
+                        ),
                     }
                 )
 
@@ -796,12 +813,6 @@ def main():
         dest="incremental",
         default=True,
         help="Disable incremental indexing (re-index all papers)",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=EMBEDDING_MODEL_NAME,
-        help="HuggingFace model to use for embeddings",
     )
     parser.add_argument(
         "--batch_size",
