@@ -1,9 +1,11 @@
+import re
 import os
 import sqlite3
 import weaviate
 import weaviate.classes as wvc
 from weaviate.classes.init import AdditionalConfig, Timeout
-from weaviate.classes.query import MetadataQuery
+from weaviate.classes.query import MetadataQuery, QueryReference
+from weaviate.classes.config import ReferenceProperty
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 from dataclasses import dataclass
@@ -35,7 +37,6 @@ except LookupError:
     logger.info("NLTK data not found, downloading")
     nltk.download("punkt")
     nltk.download("punkt_tab")
-
 
 @dataclass
 class PaperChunk:
@@ -117,7 +118,6 @@ class RAGDatabase:
         papers = []
         for row in cursor.fetchall():
             paper = dict(row)
-            # Convert authors string to list
             paper["authors"] = (
                 paper["authors"].split(",") if paper["authors"] else []
             )
@@ -290,6 +290,38 @@ class RAGDatabase:
                     data_type=wvc.config.DataType.TEXT,
                     description="Title of the paper",
                 ),
+            ],
+            "references": [
+                ReferenceProperty(
+                    name="information",
+                    target_collection="PaperAbstract",
+                    description="Paper information for chunks",
+                ),
+            ],
+            "vectorizer": "none",
+        }
+
+    def get_abstract_schema_definition(self) -> dict:
+        """
+        Get the schema definition for the PaperAbstract class.
+
+        Returns:
+            dict: Schema definition
+        """
+        return {
+            "class": "PaperAbstract",
+            "description": "Abstract of a paper with metadata",
+            "properties": [
+                wvc.config.Property(
+                    name="paper_id",
+                    data_type=wvc.config.DataType.INT,
+                    description="ID of the paper in the SQLite database",
+                ),
+                wvc.config.Property(
+                    name="title",
+                    data_type=wvc.config.DataType.TEXT,
+                    description="Title of the paper",
+                ),
                 wvc.config.Property(
                     name="authors",
                     data_type=wvc.config.DataType.TEXT_ARRAY,
@@ -300,8 +332,13 @@ class RAGDatabase:
                     data_type=wvc.config.DataType.TEXT,
                     description="Category of the paper",
                 ),
+                wvc.config.Property(
+                    name="abstract",
+                    data_type=wvc.config.DataType.TEXT,
+                    description="Abstract of the paper",
+                ),
             ],
-            "vectorizer": "none",  # We'll provide our own vectors
+            "vectorizer": "none",
         }
 
     def initialize_schema(self) -> bool:
@@ -324,6 +361,38 @@ class RAGDatabase:
 
         try:
             schema_definition = self.get_schema_definition()
+            self.weaviate_client.collections.create(
+                schema_definition["class"],
+                description=schema_definition["description"],
+                properties=schema_definition["properties"],
+                references=schema_definition["references"],
+            )
+            logger.info(f"Created chunks collection for '{class_name}'")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to create chunks collection: {e}")
+            return False
+
+    def initialize_abstract_schema(self) -> bool:
+        """
+        Initialize the Weaviate abstract schema if it doesn't exist.
+
+        Returns:
+            bool: True if schema was created or already exists, False on error
+        """
+        if not hasattr(self, "weaviate_client") or not self.weaviate_client:
+            if not self.connect_to_weaviate():
+                return False
+
+        class_name = "PaperAbstract"
+        if self.weaviate_client.collections.exists(class_name):
+            logger.warning(
+                f"Collection '{class_name}' already exists. Using existing collection."
+            )
+            return True
+
+        try:
+            schema_definition = self.get_abstract_schema_definition()
             self.weaviate_client.collections.create(
                 schema_definition["class"],
                 description=schema_definition["description"],
@@ -355,20 +424,27 @@ class RAGDatabase:
             if not self.connect_to_weaviate():
                 return False
 
-        class_name = "PaperChunk"
-        if not self.weaviate_client.collections.exists(class_name):
-            logger.warning(
-                f"Schema '{class_name}' does not exist. Nothing to delete."
-            )
-            return True
+        error, exception = False, None
+        for class_name in ["PaperChunk", "PaperAbstract"]:
+            if not self.weaviate_client.collections.exists(class_name):
+                logger.warning(
+                    f"Collection '{class_name}' does not exist. Nothing to delete."
+                )
+                continue
 
-        try:
-            self.weaviate_client.collections.delete(class_name)
-            logger.info(f"Deleted schema '{class_name}'")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete schema: {e}")
+            try:
+                self.weaviate_client.collections.delete(class_name)
+                logger.info(f"Deleted collection '{class_name}'")
+            except Exception as e:
+                logger.error(f"Failed to delete collection: {e}")
+                error = True
+                exception = e
+
+        if error:
+            logger.error(f"Failed to delete schema: {exception}")
             return False
+
+        return True
 
     def initialize_embedding_model(self):
         """
@@ -428,16 +504,18 @@ class RAGDatabase:
     def index_paper_chunks(
         self,
         paper_chunks: list[PaperChunk],
-        incremental: bool = True,
+        uuid_correspondence: dict[int, str],
         batch_size: int = DEFAULT_BATCH_SIZE,
+        existing_paper_ids: set[int] | None = None,
     ):
         """
         Index paper chunks in Weaviate with embeddings.
 
         Args:
             paper_chunks: List of PaperChunk objects to index.
-            incremental: If True, only index chunks from papers that aren't already indexed.
+            uuid_correspondence: Dictionary mapping paper IDs to UUIDs.
             batch_size: Batch size for indexing.
+            existing_paper_ids: Set of paper IDs that are already indexed.
         """
         if not hasattr(self, "weaviate_client") or not self.weaviate_client:
             if not self.connect_to_weaviate() or not self.initialize_schema():
@@ -446,22 +524,20 @@ class RAGDatabase:
                 )
 
         # Filter out already indexed papers if in incremental mode
-        if incremental:
-            existing_paper_ids = self.get_existing_paper_ids()
-            if existing_paper_ids:
-                original_count = len(paper_chunks)
-                paper_chunks = [
-                    chunk
-                    for chunk in paper_chunks
-                    if chunk.paper_id not in existing_paper_ids
-                ]
-                logger.info(
-                    f"Skipping {original_count - len(paper_chunks)} already indexed papers"
-                )
+        if existing_paper_ids:
+            original_count = len(paper_chunks)
+            paper_chunks = [
+                chunk
+                for chunk in paper_chunks
+                if chunk.paper_id not in existing_paper_ids
+            ]
+            logger.info(
+                f"Skipping {original_count - len(paper_chunks)} already indexed papers"
+            )
 
-                if not paper_chunks:
-                    logger.info("All papers already indexed")
-                    return
+            if not paper_chunks:
+                logger.info("All papers already indexed")
+                return
 
         # Process in batches
         for i in tqdm(
@@ -499,6 +575,11 @@ class RAGDatabase:
                             properties={
                                 k: v for k, v in obj.items() if k != "vector"
                             },
+                            references={
+                                "information": uuid_correspondence[
+                                    obj["paper_id"]
+                                ]
+                            },
                             vector=obj["vector"],
                         )
             except Exception as e:
@@ -531,8 +612,16 @@ class RAGDatabase:
         if not self.connect_to_weaviate():
             return False
 
+        if not self.initialize_abstract_schema():
+            return False
+
         if not self.initialize_schema():
             return False
+
+        if incremental:
+            existing_paper_ids = self.get_existing_paper_ids()
+        else:
+            existing_paper_ids = None
 
         try:
             # Initialize embedding model
@@ -550,9 +639,34 @@ class RAGDatabase:
                 logger.error("No paper chunks were created")
                 return False
 
+            abstracts = self.weaviate_client.collections.get("PaperAbstract")
+            with abstracts.batch.fixed_size(batch_size=batch_size) as batch:
+                for paper in papers:
+                    if paper["id"] in existing_paper_ids:
+                        continue
+                    batch.add_object(
+                        properties={
+                            "paper_id": paper["id"],
+                            "title": paper["title"],
+                            "abstract": paper["abstract"],
+                            "category": paper["category"],
+                            "authors": paper["authors"],
+                        }
+                    )
+            uuid_correspondence = {
+                o.properties["paper_id"]: o.uuid for o in abstracts.iterator()
+            }
+
+            logger.info(
+                f"Transferred {len(uuid_correspondence)} abstracts to Weaviate"
+            )
+
             # Index chunks
             self.index_paper_chunks(
-                paper_chunks, incremental=incremental, batch_size=batch_size
+                paper_chunks,
+                uuid_correspondence=uuid_correspondence,
+                batch_size=batch_size,
+                existing_paper_ids=existing_paper_ids,
             )
 
             # Get stats
@@ -581,7 +695,11 @@ class RAGDatabase:
                 logger.info("Database connection closed")
 
     def query_text(
-        self, text: str, limit: int = 10, query_kwargs: dict[str, Any] = None
+        self,
+        text: str,
+        limit: int = 10,
+        query_kwargs: dict[str, Any] = None,
+        group_by_paper: bool = False,
     ) -> list[PaperChunk]:
         """
         Query the RAG database for papers similar to the given text.
@@ -592,6 +710,8 @@ class RAGDatabase:
                 Defaults to 10.
             query_kwargs (dict[str, Any], optional): Additional keyword arguments
                 to pass to the query. Defaults to None.
+            group_by_paper (bool, optional): If True, groups the outputs by paper.
+                Defaults to False.
 
         Returns:
             List of PaperChunk objects similar to the given text
@@ -604,15 +724,42 @@ class RAGDatabase:
             query_kwargs = {}
             query_kwargs.update(DEFAULT_QUERY_KWARGS)
 
-        collection = self.weaviate_client.collections.get("PaperChunk")
-        result = collection.query.hybrid(
-            query=None,
+        chunks = self.weaviate_client.collections.get("PaperChunk")
+        result = chunks.query.hybrid(
+            query=text,
             query_properties=["text", "title"],
             vector=self.embed_texts([text])[0],
             limit=limit,
             return_metadata=MetadataQuery(score=True, explain_score=True),
+            return_references=QueryReference(link_on="information"),
             **query_kwargs,
         )
+
+        if group_by_paper:
+            grouped_results = {}
+            for object in result.objects:
+                paper_id = object.properties["paper_id"]
+                if paper_id not in grouped_results:
+                    abstract_obj = object.references["information"].objects[0]
+                    abstract = abstract_obj.properties["abstract"]
+                    grouped_results[paper_id] = {
+                        "abstract": abstract,
+                        "title": object.properties["title"],
+                        "authors": abstract_obj.properties["authors"],
+                        "category": abstract_obj.properties["category"],
+                        "retrieved_chunks": [],
+                    }
+                text_string = re.escape(object.properties["text"].strip())
+                search_obj = re.search(text_string, abstract)
+                span = search_obj.span() if search_obj else None
+                grouped_results[paper_id]["retrieved_chunks"].append(
+                    {
+                        "text": object.properties["text"],
+                        "span": span,
+                    }
+                )
+
+            return grouped_results
 
         return result
 
