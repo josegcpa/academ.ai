@@ -24,6 +24,7 @@ EMBEDDING_MODEL_NAME = os.environ.get(
 DEFAULT_QUERY_KWARGS = {"alpha": 0.3}
 DEFAULT_BATCH_SIZE = 100
 CHUNK_OVERLAP = 1
+REPLACE_WITH_NOTHING = ["AO_SCPLOWBSTRACTC_SCPLOW"]
 
 import logging
 
@@ -130,6 +131,8 @@ class RAGDatabase:
             paper["authors"] = (
                 paper["authors"].split(",") if paper["authors"] else []
             )
+            for replace in REPLACE_WITH_NOTHING:
+                paper["abstract"] = paper["abstract"].replace(replace, "")
             papers.append(paper)
 
         logger.info(f"Retrieved {len(papers)} papers from database")
