@@ -115,7 +115,7 @@ class RAGDatabase:
             List of dictionaries containing paper and author information
         """
         query = """
-        SELECT p.id, p.title, p.abstract, p.category, 
+        SELECT p.id, p.title, p.abstract, p.category, p.doi,
                GROUP_CONCAT(a.first_name || ' ' || a.last_name) as authors
         FROM papers p
         LEFT JOIN authors a ON p.id = a.paper_id
@@ -353,6 +353,11 @@ class RAGDatabase:
                     name="abstract",
                     data_type=wvc.config.DataType.TEXT,
                     description="Abstract of the paper",
+                ),
+                wvc.config.Property(
+                    name="doi",
+                    data_type=wvc.config.DataType.TEXT,
+                    description="DOI of the paper",
                 ),
             ],
             "vectorizer": "none",
@@ -671,6 +676,7 @@ class RAGDatabase:
                             "abstract": paper["abstract"],
                             "category": paper["category"],
                             "authors": paper["authors"],
+                            "doi": paper["doi"],
                         }
                     )
             uuid_correspondence = {
@@ -762,11 +768,13 @@ class RAGDatabase:
                 if paper_id not in grouped_results:
                     abstract_obj = object.references["information"].objects[0]
                     abstract = abstract_obj.properties["abstract"]
+                    doi = abstract_obj.properties["doi"]
                     grouped_results[paper_id] = {
                         "abstract": abstract,
                         "title": object.properties["title"],
                         "authors": abstract_obj.properties["authors"],
                         "category": abstract_obj.properties["category"],
+                        "doi": doi,
                         "retrieved_chunks": [],
                     }
                 grouped_results[paper_id]["retrieved_chunks"].append(

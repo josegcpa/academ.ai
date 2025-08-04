@@ -1,7 +1,8 @@
 """
 FastAPI application for the Academic Search RAG database.
 
-This module provides a REST API for querying the RAG database and checking its health status.
+This module provides a REST API for querying the RAG database and checking its
+health status.
 """
 
 import os
@@ -153,6 +154,7 @@ async def query(request: QueryRequest):
                     spans=[
                         chunk["span"] for chunk in abstract["retrieved_chunks"]
                     ],
+                    doi=abstract["doi"],
                 )
                 for paper_id, abstract in results.items()
             ],
