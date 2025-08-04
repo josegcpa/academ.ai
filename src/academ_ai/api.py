@@ -52,6 +52,7 @@ class AbstractResponse(BaseModel):
     authors: list[str]
     category: str
     spans: list[tuple[int, int]]
+    doi: str
 
 
 class QueryResponse(BaseModel):
