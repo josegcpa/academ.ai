@@ -25,7 +25,7 @@ EMBEDDING_MODEL_NAME = os.environ.get(
 DEFAULT_QUERY_KWARGS = {"alpha": 0.3}
 DEFAULT_BATCH_SIZE = 100
 CHUNK_OVERLAP = 1
-REPLACE_WITH_NOTHING = ["AO_SCPLOWBSTRACTC_SCPLOW"]
+REPLACE_WITH_NOTHING = ["AO_SCPLOWBSTRACTC_SCPLOW", "C_LI", "O_LI", "C_LIO_LI"]
 
 import logging
 
@@ -769,13 +769,16 @@ class RAGDatabase:
             grouped_results = {}
             for object in result.objects:
                 score = object.metadata.score
-                explain_score = object.metadata.explain_score.split("\n")[-2:]
+                explain_score = object.metadata.explain_score.split("\n")
+                explain_score = [s for s in explain_score if len(s) > 0]
                 explain_score = {
                     "keyword" if "keyword,bm25" in s else "semantic": float(
                         re.search(r"normalized score: (\d+\.\d+)", s).group(1)
                     )
                     for s in explain_score
                 }
+                if "keyword" not in explain_score:
+                    explain_score["keyword"] = 0
                 paper_id = object.properties["paper_id"]
                 if paper_id not in grouped_results:
                     abstract_obj = object.references["information"].objects[0]

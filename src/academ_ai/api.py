@@ -129,13 +129,16 @@ async def query(request: QueryRequest):
 
     try:
         # Convert query_kwargs values to the correct type if needed
-        query_args = request.query_kwargs if request.query_kwargs else {}
-        processed_kwargs = {}
-        for key, value in query_args.items():
-            if isinstance(value, str) and value.isdigit():
-                processed_kwargs[key] = int(value)
-            else:
-                processed_kwargs[key] = value
+        if request.query_kwargs is not None:
+            query_args = request.query_kwargs
+            processed_kwargs = {}
+            for key, value in query_args.items():
+                if isinstance(value, str) and value.isdigit():
+                    processed_kwargs[key] = int(value)
+                else:
+                    processed_kwargs[key] = value
+        else:
+            processed_kwargs = None
 
         # Query the RAG database
         results = global_context["rag_db"].query_text(
