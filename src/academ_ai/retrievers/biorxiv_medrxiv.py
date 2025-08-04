@@ -97,7 +97,10 @@ def retrive_biorxiv_medrxiv(source: str, date_start: datetime, date_end: datetim
             collection[idx]["source"] = source
             collection[idx]["date_added"] = datetime.now()
             collection[idx]["journal"] = collection[idx]["server"]
-            collection[idx]["funding"] = str(collection[idx]["funding"])
+            if "funding" in collection[idx]:
+                collection[idx]["funding"] = str(collection[idx]["funding"])
+            else:
+                collection[idx]["funding"] = ""
             output_collection.append({
                 "article": {
                     k: collection[idx][k] 
