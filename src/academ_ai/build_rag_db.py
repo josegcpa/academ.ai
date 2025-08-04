@@ -1,5 +1,3 @@
-from ast import Pass
-import re
 import os
 import sqlite3
 import weaviate
@@ -41,6 +39,11 @@ except LookupError:
     logger.info("NLTK data not found, downloading")
     nltk.download("punkt")
     nltk.download("punkt_tab")
+
+logger.info("WEAVIATE_URL: %s", WEAVIATE_URL)
+logger.info("WEAVIATE_PORT: %s", WEAVIATE_PORT)
+logger.info("GRPC_PORT: %s", GRPC_PORT)
+logger.info("EMBEDDING_MODEL_NAME: %s", EMBEDDING_MODEL_NAME)
 
 @dataclass
 class PaperChunk:
@@ -824,7 +827,9 @@ def main():
     args = parser.parse_args()
 
     # Initialize the RAG database builder
-    rag_builder = RAGDatabase(model_name=args.model, db_path=args.db_path)
+    rag_builder = RAGDatabase(
+        model_name=EMBEDDING_MODEL_NAME, db_path=args.db_path
+    )
 
     # Handle schema reset if requested
     if args.reset:
