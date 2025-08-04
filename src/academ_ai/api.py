@@ -44,7 +44,7 @@ class QueryRequest(BaseModel):
 
 
 class AbstractResponse(BaseModel):
-    """Response model for a paper chunk."""
+    """Response model for a paper abstract."""
 
     paper_id: int
     abstract: str
@@ -53,6 +53,8 @@ class AbstractResponse(BaseModel):
     category: str
     spans: list[tuple[int, int]]
     doi: str
+    scores: list[float]
+    explain_scores: list[dict[str, float]]
 
 
 class QueryResponse(BaseModel):
@@ -117,7 +119,7 @@ async def query(request: QueryRequest):
         request: The query request containing the text to search for and optional parameters.
 
     Returns:
-        A response containing the most relevant paper chunks.
+        A response containing the most relevant paper chunks or abstracts.
     """
     if global_context["rag_db"] is None:
         raise HTTPException(
@@ -154,6 +156,13 @@ async def query(request: QueryRequest):
                     category=abstract["category"],
                     spans=[
                         chunk["span"] for chunk in abstract["retrieved_chunks"]
+                    ],
+                    scores=[
+                        chunk["score"] for chunk in abstract["retrieved_chunks"]
+                    ],
+                    explain_scores=[
+                        chunk["explain_score"]
+                        for chunk in abstract["retrieved_chunks"]
                     ],
                     doi=abstract["doi"],
                 )

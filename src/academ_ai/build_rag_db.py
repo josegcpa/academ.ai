@@ -1,3 +1,4 @@
+import re
 import os
 import sqlite3
 import weaviate
@@ -767,6 +768,14 @@ class RAGDatabase:
         if group_by_paper:
             grouped_results = {}
             for object in result.objects:
+                score = object.metadata.score
+                explain_score = object.metadata.explain_score.split("\n")[-2:]
+                explain_score = {
+                    "keyword" if "keyword,bm25" in s else "semantic": float(
+                        re.search(r"normalized score: (\d+\.\d+)", s).group(1)
+                    )
+                    for s in explain_score
+                }
                 paper_id = object.properties["paper_id"]
                 if paper_id not in grouped_results:
                     abstract_obj = object.references["information"].objects[0]
@@ -787,6 +796,8 @@ class RAGDatabase:
                             object.properties["span_start"],
                             object.properties["span_end"],
                         ),
+                        "score": score,
+                        "explain_score": explain_score,
                     }
                 )
 
