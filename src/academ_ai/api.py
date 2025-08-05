@@ -24,6 +24,28 @@ logging.basicConfig(level=logging.DEBUG)
 global_context = {}
 
 
+def process_spans(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """
+    Goes through all spans and checks whether there are any whose bounds are
+    within 2 units but different. If so, it changes the bound so they match,
+    making contiguous spans continuous.
+
+    Args:
+        spans: List of spans to process.
+
+    Returns:
+        List of processed spans.
+    """
+    processed_spans = []
+    for span in spans:
+        for other_span in spans:
+            diff = span[1] - other_span[0]
+            if abs(diff) < 2:
+                span = (span[0], other_span[0])
+        processed_spans.append(span)
+    return processed_spans
+
+
 # Pydantic Models
 class QueryRequest(BaseModel):
     """Request model for the query endpoint."""
@@ -149,6 +171,12 @@ async def query(request: QueryRequest):
         )
 
         # Convert results to the response model
+        for paper_id in results:
+            results[paper_id]["retrieved_chunks"] = sorted(
+                results[paper_id]["retrieved_chunks"],
+                key=lambda x: x["span"][0],
+            )
+
         response = QueryResponse(
             results=[
                 AbstractResponse(
@@ -157,9 +185,12 @@ async def query(request: QueryRequest):
                     title=abstract["title"],
                     authors=abstract["authors"],
                     category=abstract["category"],
-                    spans=[
-                        chunk["span"] for chunk in abstract["retrieved_chunks"]
-                    ],
+                    spans=process_spans(
+                        [
+                            chunk["span"]
+                            for chunk in abstract["retrieved_chunks"]
+                        ]
+                    ),
                     scores=[
                         chunk["score"] for chunk in abstract["retrieved_chunks"]
                     ],
