@@ -65,6 +65,13 @@ class QueryRequest(BaseModel):
     )
 
 
+class Count(BaseModel):
+    """Response model for the count endpoint."""
+
+    count: list[int]
+    source: list[str]
+
+
 class AbstractResponse(BaseModel):
     """Response model for a paper abstract."""
 
@@ -212,6 +219,18 @@ async def query(request: QueryRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error querying the RAG database: {str(e)}",
         )
+
+
+@app.get(
+    "/count",
+    response_model=Count,
+    summary="Return the number of items per source",
+    description="Queries Weaviate to return the number of items per source.",
+)
+async def count():
+    count = global_context["rag_db"].count()
+    counts = {"count": list(count.values()), "source": list(count.keys())}
+    return Count(**counts)
 
 
 @app.get(

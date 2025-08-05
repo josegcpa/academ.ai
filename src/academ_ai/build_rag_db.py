@@ -6,6 +6,7 @@ import weaviate.classes as wvc
 from weaviate.classes.init import AdditionalConfig, Timeout
 from weaviate.classes.query import MetadataQuery, QueryReference
 from weaviate.classes.config import ReferenceProperty
+from weaviate.classes.aggregate import GroupByAggregate
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 from dataclasses import dataclass
@@ -117,7 +118,7 @@ class RAGDatabase:
             List of dictionaries containing paper and author information
         """
         query = """
-        SELECT p.id, p.title, p.abstract, p.category, p.doi,
+        SELECT p.id, p.title, p.abstract, p.category, p.doi, p.source,
                GROUP_CONCAT(a.first_name || ' ' || a.last_name) as authors
         FROM papers p
         LEFT JOIN authors a ON p.id = a.paper_id
@@ -362,6 +363,11 @@ class RAGDatabase:
                     name="doi",
                     data_type=wvc.config.DataType.TEXT,
                     description="DOI of the paper",
+                ),
+                wvc.config.Property(
+                    name="source",
+                    data_type=wvc.config.DataType.TEXT,
+                    description="Source of the paper",
                 ),
             ],
             "vectorizer": "none",
@@ -681,6 +687,7 @@ class RAGDatabase:
                             "category": paper["category"],
                             "authors": paper["authors"],
                             "doi": paper["doi"],
+                            "source": paper["source"],
                         }
                     )
             uuid_correspondence = {
@@ -805,6 +812,24 @@ class RAGDatabase:
                 )
 
             return grouped_results
+
+        return result
+
+    def count(self) -> dict[str, int]:
+        """
+        Count the number of papers in the database by source.
+
+        Returns:
+            dict[str, int]: A dictionary with the count of papers by source.
+        """
+        abstracts = self.weaviate_client.collections.get("PaperAbstract")
+        result = abstracts.aggregate.over_all(
+            group_by=GroupByAggregate(prop="source")
+        )
+
+        result = {
+            group.grouped_by.value: group.total_count for group in result.groups
+        }
 
         return result
 

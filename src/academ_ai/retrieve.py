@@ -1,4 +1,5 @@
 import sqlite3
+from multiprocessing import Pool
 from datetime import datetime
 from datetime import timedelta
 import logging
@@ -15,6 +16,10 @@ schemas = {
 }
 
 
+def retrieve_biorxiv_medrxiv_mp_wrapper(kwargs):
+    return retrievers.retrive_biorxiv_medrxiv(**kwargs), kwargs
+
+
 def main():
     import argparse
 
@@ -25,6 +30,7 @@ def main():
     parser.add_argument("--date_start", type=str, required=True)
     parser.add_argument("--date_end", type=str, required=True)
     parser.add_argument("--output_db", type=str, required=True)
+    parser.add_argument("--n_workers", type=int, default=0)
     args = parser.parse_args()
 
     date_start = datetime.strptime(args.date_start, "%Y-%m-%d")
@@ -70,13 +76,20 @@ def main():
     days = [d for d in days if d.strftime("%Y-%m-%d") not in exclude_dates]
     logger.info(f"Filtered days: {len(days)}")
 
-    for day_idx, current_date in enumerate(days):
-        logger.info(f"Retrieving {current_date.strftime('%Y-%m-%d')}")
-        output = retrievers.retrive_biorxiv_medrxiv(
-            args.source, current_date, current_date
-        )
-        logger.info(f"Retrieved {len(output)} papers")
+    all_date_kwargs = [
+        {"source": args.source, "date_start": d, "date_end": d} for d in days
+    ]
+    if args.n_workers > 1:
+        pool = Pool(args.n_workers)
+        map_fn = pool.imap
+    else:
+        map_fn = map
+
+    for day_idx, (output, kwargs) in enumerate(
+        map_fn(retrieve_biorxiv_medrxiv_mp_wrapper, all_date_kwargs)
+    ):
         logger.info(f"Inserting {len(output)} papers")
+        current_date = kwargs["date_start"]
         with sqlite3.connect(args.output_db) as conn:
             five_days_ago = datetime.now() - timedelta(days=5)
             if len(output) == 0 and current_date < five_days_ago:
@@ -128,6 +141,8 @@ def main():
         logger.info(f"Inserted {len(output)} papers")
         logger.info(f"Finished {day_idx + 1} out of {len(days)}")
 
+    if args.n_workers > 1:
+        pool.close()
 
 if __name__ == "__main__":
     main()
