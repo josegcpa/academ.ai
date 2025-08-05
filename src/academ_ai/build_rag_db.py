@@ -510,9 +510,14 @@ class RAGDatabase:
 
         return embeddings.tolist()
 
-    def get_existing_paper_ids(self) -> set[int]:
+    def get_existing_paper_ids(
+        self, collection_name: str = "PaperChunk"
+    ) -> set[int]:
         """
         Get set of paper IDs that are already indexed in Weaviate.
+
+        Args:
+            collection_name: Name of the collection to get existing paper IDs from
 
         Returns:
             set[int]: Set of paper IDs that are already indexed
@@ -525,7 +530,7 @@ class RAGDatabase:
                 [
                     item.properties["paper_id"]
                     for item in self.weaviate_client.collections.get(
-                        "PaperChunk"
+                        collection_name
                     ).iterator()
                 ]
             )
@@ -655,8 +660,12 @@ class RAGDatabase:
 
         if incremental:
             existing_paper_ids = self.get_existing_paper_ids()
+            existing_abstract_ids = self.get_existing_paper_ids(
+                collection_name="PaperAbstract"
+            )
         else:
             existing_paper_ids = None
+            existing_abstract_ids = None
 
         try:
             # Initialize embedding model
@@ -674,10 +683,11 @@ class RAGDatabase:
                 logger.error("No paper chunks were created")
                 return False
 
+            logger.info(f"Transferring abstracts to Weaviate")
             abstracts = self.weaviate_client.collections.get("PaperAbstract")
             with abstracts.batch.fixed_size(batch_size=batch_size) as batch:
-                for paper in papers:
-                    if paper["id"] in existing_paper_ids:
+                for paper in tqdm(papers, desc="Adding abstracts"):
+                    if paper["id"] in existing_abstract_ids:
                         continue
                     batch.add_object(
                         properties={
