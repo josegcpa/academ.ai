@@ -119,7 +119,8 @@ class RAGDatabase:
         """
         query = """
         SELECT p.id, p.title, p.abstract, p.category, p.doi, p.source,
-               GROUP_CONCAT(a.first_name || ' ' || a.last_name) as authors
+               GROUP_CONCAT(a.first_name || ' ' || a.last_name) as authors,
+               GROUP_CONCAT(a.author_idx) as author_idx
         FROM papers p
         LEFT JOIN authors a ON p.id = a.paper_id
         GROUP BY p.id
@@ -130,9 +131,11 @@ class RAGDatabase:
         papers = []
         for row in cursor.fetchall():
             paper = dict(row)
+            author_idxs = list(map(int, paper["author_idx"].split(",")))
             paper["authors"] = (
                 paper["authors"].split(",") if paper["authors"] else []
             )
+            paper["authors"] = [paper["authors"][i] for i in author_idxs]
             for replace in REPLACE_WITH_NOTHING:
                 paper["abstract"] = paper["abstract"].replace(replace, "")
             papers.append(paper)
@@ -788,7 +791,7 @@ class RAGDatabase:
                 explain_score = [s for s in explain_score if len(s) > 0]
                 explain_score = {
                     "keyword" if "keyword,bm25" in s else "semantic": float(
-                        re.search(r"normalized score: (\d+\.\d+)", s).group(1)
+                        re.search(r"(?<=normalized score: )[0-9.]+", s).group()
                     )
                     for s in explain_score
                 }
