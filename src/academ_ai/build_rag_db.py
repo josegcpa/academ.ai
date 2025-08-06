@@ -503,8 +503,7 @@ class RAGDatabase:
         embeddings = self.embedding_model.encode(
             texts,
             convert_to_numpy=True,
-            show_progress_bar=True,
-            batch_size=32,
+            show_progress_bar=False,
             normalize_embeddings=True,
         )
 
@@ -578,40 +577,39 @@ class RAGDatabase:
                 return
 
         # Process in batches
-        for i in tqdm(
-            range(0, len(paper_chunks), batch_size),
-            desc="Indexing chunks",
-            unit="batch",
-        ):
-            batch = paper_chunks[i : i + batch_size]
+        with self.weaviate_client.collections.get(
+            "PaperChunk"
+        ).batch.fixed_size(batch_size=batch_size) as weaviate_batch:
+            for i in tqdm(
+                range(0, len(paper_chunks), batch_size),
+                desc="Indexing chunks",
+                unit="batch",
+            ):
+                batch = paper_chunks[i : i + batch_size]
 
-            # Prepare batch data
-            texts = [chunk.text for chunk in batch]
-            embeddings = self.embed_texts(texts)
+                # Prepare batch data
+                texts = [chunk.text for chunk in batch]
+                embeddings = self.embed_texts(texts)
 
-            # Prepare objects for batch import
-            objects = []
-            for chunk, vector in zip(batch, embeddings):
-                obj = {
-                    "paper_id": chunk.paper_id,
-                    "chunk_id": chunk.chunk_id,
-                    "text": chunk.text,
-                    "title": chunk.title,
-                    "authors": chunk.authors,
-                    "category": chunk.category,
-                    "span_start": chunk.start,
-                    "span_end": chunk.end,
-                    "vector": vector,
-                }
-                objects.append(obj)
+                # Prepare objects for batch import
+                objects = []
+                for chunk, vector in zip(batch, embeddings):
+                    obj = {
+                        "paper_id": chunk.paper_id,
+                        "chunk_id": chunk.chunk_id,
+                        "text": chunk.text,
+                        "title": chunk.title,
+                        "span_start": chunk.start,
+                        "span_end": chunk.end,
+                        "vector": vector,
+                    }
+                    objects.append(obj)
 
-            # Import batch to Weaviate
-            try:
-                with self.weaviate_client.collections.get(
-                    "PaperChunk"
-                ).batch.fixed_size(batch_size=batch_size) as batch:
+                # Import batch to Weaviate
+                try:
+
                     for obj in objects:
-                        batch.add_object(
+                        weaviate_batch.add_object(
                             properties={
                                 k: v for k, v in obj.items() if k != "vector"
                             },
@@ -622,9 +620,9 @@ class RAGDatabase:
                             },
                             vector=obj["vector"],
                         )
-            except Exception as e:
-                logger.error(f"Error importing batch {i//batch_size}: {e}")
-                raise
+                except Exception as e:
+                    logger.error(f"Error importing batch {i//batch_size}: {e}")
+                    raise
 
         logger.info(f"Indexed {len(paper_chunks)} paper chunks in Weaviate")
 
