@@ -59,9 +59,11 @@ class QueryRequest(BaseModel):
         le=100,
         description="Maximum number of results to return",
     )
-    query_kwargs: dict[str, str | int] | None = Field(
-        default=None,
-        description="Additional query parameters to pass to the RAG database",
+    query_kwargs: dict[str, str | int | float | bool | list[int]] | None = (
+        Field(
+            default=None,
+            description="Additional query parameters to pass to the RAG database",
+        )
     )
 
 
