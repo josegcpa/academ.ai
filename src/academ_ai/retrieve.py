@@ -43,6 +43,7 @@ def main():
     db.create_db(args.output_db)
 
     exclude_dates = []
+    exclude_dois = []
     with sqlite3.connect(args.output_db) as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -66,6 +67,12 @@ def main():
             for row in cursor.fetchall()
         ]
         exclude_dates.extend(dates)
+        cursor.execute(
+            "SELECT doi FROM papers WHERE source = ?",
+            (args.source,),
+        )
+        dois = [row[0] for row in cursor.fetchall()]
+        exclude_dois.extend(dois)
     exclude_dates = list(set(exclude_dates))
 
     days = [
@@ -102,6 +109,9 @@ def main():
                 paper = data_entry["article"]
                 authors = data_entry["authors"]
                 author_affiliations = data_entry["author_affiliations"]
+                doi = paper["doi"]
+                if doi in exclude_dois:
+                    continue
                 author_ids_affiliations = []
                 try:
                     paper_id = db.insert_into_table(
@@ -138,6 +148,7 @@ def main():
                     }
                     db.insert_into_table(conn, "author_affiliations", data_dict)
                 conn.commit()
+                exclude_dois.append(doi)
         logger.info(f"Inserted {len(output)} papers")
         logger.info(f"Finished {day_idx + 1} out of {len(days)}")
 
