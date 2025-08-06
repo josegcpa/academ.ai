@@ -17,7 +17,7 @@ class Paper(BaseModel):
     date_added: datetime
     preprint: bool
     published_doi: str
-    
+
 class DatesWithNoPapers(BaseModel):
     date: datetime
     source: str
@@ -25,6 +25,7 @@ class DatesWithNoPapers(BaseModel):
 class Author(BaseModel):
     first_name: str
     last_name: str
+    author_idx: int
     paper_id: int
     corresponding: bool
 

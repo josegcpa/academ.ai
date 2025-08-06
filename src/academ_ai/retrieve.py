@@ -128,11 +128,12 @@ def main():
                     logger.error(f"Error inserting paper: {paper['doi']}")
                     pprint.pprint(paper)
                     raise e
-                for author in authors:
+                for author_idx, author in enumerate(authors):
                     data_dict = {
                         "first_name": author["first_name"],
                         "last_name": author["last_name"],
                         "paper_id": paper_id,
+                        "author_idx": author_idx,
                         "corresponding": author["corresponding"],
                     }
                     author_id = db.insert_into_table(conn, "authors", data_dict)
