@@ -274,7 +274,7 @@ async def health_check():
     )
 
 
-if __name__ == "__main__":
+def main():
     import uvicorn
 
     PORT = int(os.environ.get("API_PORT", 8000))
@@ -285,3 +285,7 @@ if __name__ == "__main__":
         port=PORT,
         reload=True,
     )
+
+
+if __name__ == "__main__":
+    main()
