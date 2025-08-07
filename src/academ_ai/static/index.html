@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Academ.ai</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="static/styles.css">
+    <script src="static/titleRegex.js"></script>
+    <script src="static/script.js" ></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Habibi&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+        rel="stylesheet">
+
+</head>
+<body>
+    <header>
+        <h1>Academ.ai</h1>
+    </header>
+    <main>
+        <div class="curtain"></div>
+        <div class="search-container">
+            <input type="text" id="searchInput" placeholder="Search for academic papers..." autocomplete="off">
+            <button id="searchButton">Search</button>
+        </div>
+        <div class="options-container">
+            <div class="option-container">
+                <label for="alpha_input">Alpha: <span id="alpha_value">0.3</span></label>
+                <input id="alpha_input" type="range" min="0" max="1" step="0.05" value="0.3"/>
+                <div class="explanation">
+                    Controls the balance between <b>keyword</b> and <b>semantic</b> similarity.
+                    Higher alpha focuses on <b>meaning</b>.
+                    Lower alpha focuses on <b>keywords</b>.
+                </div>
+            </div>
+            <div class="option-container">
+                <label for="number_input">Number of chunks: <span id="number_value">10</span></label>
+                <input id="number_input" type="range" min="5" max="100" step="1" value="10"/>
+                <div class="explanation">
+                    Controls the number of chunks returned by the search. 
+                    Chunks are organised by abstract and paper and displayed to you.
+                </div>
+            </div>
+        </div>
+        <div id="results"></div>
+        <div id="tooltip"></div>
+    </main>
+    <footer>
+        <p>&copy; 2025 José Guilherme de Almeida. All rights reserved.</p>
+    </footer>
+</body>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const searchButton = document.getElementById("searchButton");
+        const searchInput = document.getElementById("searchInput");
+        const resultsDiv = document.getElementById("results");
+
+        const valueAlpha = document.getElementById("alpha_value");
+        const inputAlpha = document.getElementById("alpha_input");
+        valueAlpha.textContent = localStorage.getItem("alpha") || "0.3";
+        inputAlpha.value = localStorage.getItem("alpha") || "0.3";
+        inputAlpha.addEventListener("input", (event) => {
+            valueAlpha.textContent = parseFloat(event.target.value).toFixed(2);
+        });
+
+        const valueNumber = document.getElementById("number_value");
+        const inputNumber = document.getElementById("number_input");
+        valueNumber.textContent = localStorage.getItem("number") || "10";
+        inputNumber.value = localStorage.getItem("number") || "10";
+        inputNumber.addEventListener("input", (event) => {
+            valueNumber.textContent = event.target.value;
+        });
+
+        // Handle search button click
+        searchButton.addEventListener("click", performSearch);
+        
+        // Also handle Enter key in search input
+        searchInput.addEventListener("keypress", (e) => {
+            if (e.key === 'Enter') {
+                performSearch();
+            }
+        });
+
+        async function performSearch() {
+            const queryTerm = searchInput.value.trim();
+            
+            if (!queryTerm) {
+                resultsDiv.innerHTML = `
+                <div class="error">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Please enter a search term
+                </div>`;
+                return;
+            }
+
+            if (queryTerm.length < 5) {
+                resultsDiv.innerHTML = `
+                    <div class="error">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Please enter a search term with at least 5 characters 
+                    </div>`;
+                return;
+            }
+
+            // Show loading state
+            resultsDiv.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> Searching...</div>';
+            
+            try {
+                const response = await queryText(queryTerm, inputAlpha.value, inputNumber.value);
+                localStorage.setItem("alpha", inputAlpha.value);
+                localStorage.setItem("number", inputNumber.value);
+                displayResults(response);
+            } catch (error) {
+                console.error('Search error:', error);
+                resultsDiv.innerHTML = `
+                    <div class="error">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Error fetching results. Please try again later.
+                    </div>`;
+            }
+        }
+
+        function displayResults(response) {
+            resultsDiv.innerHTML = '';
+            
+            if (!response || !response.results || response.results.length === 0) {
+                resultsDiv.innerHTML = '<div class="no-results">No results found. Try a different search term.</div>';
+                return;
+            }
+
+            response.results.forEach((result) => {
+                console.log(result)
+                resultsDiv.appendChild(makePaperCard(result));
+            });
+            Object.values(document.getElementsByClassName("paper-highlight")).forEach((span) => {
+                const articleId = span.classList[1].split("_")[0];
+                let chunkId = Array();
+                Object.values(span.classList).forEach((cl) => {
+                    if (cl.includes("_")) {
+                        chunkId.push(parseInt(cl.split("_")[1]));
+                    }
+                });
+                const result = response.results.find((result) => result.paper_id == articleId);
+                let quotes = Array();
+                for (const idx of chunkId) {
+                    quotes.push({
+                        "quote": result.abstract.substring(result.spans[idx][0], result.spans[idx][1]),
+                        "score": result.scores[idx],
+                        "explain_score": result.explain_scores[idx],
+                    })
+                }
+                span.addEventListener("mouseover", (e) => highlightText(e, quotes));
+                span.addEventListener("mouseout", (e) => unHighlightText(e));
+            });
+        }
+    });
+</script>
+</html>
