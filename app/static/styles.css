@@ -6,7 +6,8 @@
     --color-text: #222;
     --color-border: #ccc;
     --color-hover: #9d9b9b;
-    --color-highlight: #48ff00;
+    --color-highlight: #6cfa34;
+    --color-highlight-hover: #d1ffbf;
     --color-error: #950000;
     --color-shadow: rgba(0, 0, 0, 0.2);
     
@@ -77,8 +78,9 @@ header {
     justify-content: center;
     align-items: center;
     h1 {
-        padding: var(--spacing-lg) 0 var(--spacing-md) 0;
-        margin: 0;
+        padding: var(--spacing-xs) 0 var(--spacing-xs) 0;
+        margin: var(--spacing-lg) 0 var(--spacing-md) 0;
+        cursor:default;
     }
 }
 
@@ -97,6 +99,20 @@ footer {
 
 h1, h2, h3, h4, h5, h6 {
     font-family: 'Habibi', serif;
+    letter-spacing: 1px;
+}
+
+a {
+    color: var(--color-primary);
+}
+
+.header-left {
+    background-color: var(--color-highlight);
+    transition: var(--transition);
+ 
+    &:hover {
+        background-color: var(--color-highlight-hover);
+    }
 }
 
 .error {

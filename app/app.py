@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, Response
+from flask import Flask, render_template, Response, send_from_directory
 
 app = Flask(__name__, template_folder="static")
 
@@ -22,6 +22,4 @@ def serve_script():
 
 
 if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run("academ_ai.app:app", host="0.0.0.0", port=SERVE_PORT)
+    app.run(host="0.0.0.0", port=SERVE_PORT)

@@ -34,9 +34,3 @@ packages = ["src/academ_ai"]
 academ_ai_retrieve = "academ_ai.retrieve:main"
 academ_ai_build = "academ_ai.build_rag_db:main"
 academ_ai_api = "academ_ai.api:main"
-academ_ai_serve = "academ_ai.app:main"
-
-[project.optional-dependencies]
-serve = [
-    "flask>=3.1.1",
-]

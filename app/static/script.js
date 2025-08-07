@@ -1,8 +1,9 @@
 let tooltipIsDisplayed = false;
 let tooltipTimeout = null;
 
-const highlightColor = "#b9ff9e";
-const tooltipBackgroundColor = "#6cfa34";
+const rootStyles = getComputedStyle(document.documentElement);
+const highlightColor = rootStyles.getPropertyValue("--color-highlight-hover").trim();
+const tooltipBackgroundColor = rootStyles.getPropertyValue("--color-highlight").trim();
 const PROTOCOL = "http";
 const API_HOST = "{{ API_HOST }}";
 const API_PORT = "{{ API_PORT }}";
@@ -39,8 +40,6 @@ makeQuotePrettier = function(quote, maxLen) {
 formatText = function(text) {
     text = text.replace(/\n+/g, "\n");
     text = text.replace(/\n/g, "<br><br>");
-    text = text.split("Graphical Abstract")[0];
-    text = text.split("Graphical abstract")[0];
     return text;
 }
 
