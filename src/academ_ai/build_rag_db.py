@@ -903,6 +903,9 @@ class RAGDatabase:
         return result
 
     def __del__(self):
+        """
+        Tear down the connection to the Weaviate database.
+        """
         if hasattr(self, "weaviate_client"):
             self.weaviate_client.close()
             logger.info("Weaviate connection closed")
