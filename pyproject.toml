@@ -33,3 +33,8 @@ packages = ["src/academ_ai"]
 [project.scripts]
 retrieve_papers = "academ_ai.retrieve:main"
 build_rag_db = "academ_ai.build_rag_db:main"
+
+[project.optional-dependencies]
+serve = [
+    "flask>=3.1.1",
+]
