@@ -277,9 +277,11 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
 
+    PORT = int(os.environ.get("API_PORT", 8000))
+
     uvicorn.run(
         "academ_ai.api:app",
         host="0.0.0.0",
-        port=8000,
+        port=PORT,
         reload=True,
     )
