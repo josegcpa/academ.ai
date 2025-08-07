@@ -122,6 +122,15 @@ class RAGDatabase:
             logger.error(f"Error connecting to database: {e}")
             return False
 
+    def process_abstract(self, abstract: str) -> str:
+        for string in ["Graphical Abstract", "Graphical abstract"]:
+            abstract = abstract.split(string)[0]
+        for replace in REPLACE_WITH_NOTHING:
+            abstract = abstract.replace(replace, "")
+        for regex in [r"O_TBL.*C_TBL "]:
+            abstract = re.sub(regex, "", abstract.strip())
+        return abstract
+
     def get_papers_with_authors(self) -> list[dict[str, Any]]:
         """
         Retrieve all papers with their authors from the database.
@@ -129,6 +138,7 @@ class RAGDatabase:
         Returns:
             List of dictionaries containing paper and author information
         """
+
         query = """
         SELECT p.id, p.title, p.abstract, p.category, p.doi, p.source,
                GROUP_CONCAT(a.first_name || ' ' || a.last_name) as authors,
@@ -154,8 +164,7 @@ class RAGDatabase:
             paper["authors"] = [
                 ordered_authors[i] for i in range(len(author_idxs))
             ]
-            for replace in REPLACE_WITH_NOTHING:
-                paper["abstract"] = paper["abstract"].replace(replace, "")
+            paper["abstract"] = self.process_abstract(paper["abstract"])
             papers.append(paper)
 
         logger.info(f"Retrieved {len(papers)} papers from database")
