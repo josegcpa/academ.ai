@@ -7,7 +7,7 @@ from weaviate.classes.init import AdditionalConfig, Timeout
 from weaviate.classes.query import MetadataQuery, QueryReference
 from weaviate.classes.config import ReferenceProperty
 from weaviate.classes.aggregate import GroupByAggregate
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 from tqdm import tqdm
 from dataclasses import dataclass
 import logging
@@ -16,12 +16,18 @@ import nltk
 
 # Constants
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+RERANKING_MODEL_NAME = None
 WEAVIATE_URL = os.environ.get("WEAVIATE_URL", "localhost")
 WEAVIATE_PORT = os.environ.get("WEAVIATE_PORT", 8080)
 GRPC_PORT = os.environ.get("GRPC_PORT", 50051)
 EMBEDDING_MODEL_NAME = os.environ.get(
     "EMBEDDING_MODEL_NAME", EMBEDDING_MODEL_NAME
 )
+RERANKING_MODEL_NAME = os.environ.get(
+    "RERANKING_MODEL_NAME", RERANKING_MODEL_NAME
+)
+if not RERANKING_MODEL_NAME:
+    RERANKING_MODEL_NAME = None
 
 DEFAULT_QUERY_KWARGS = {"alpha": 0.3}
 DEFAULT_BATCH_SIZE = 100
@@ -73,6 +79,7 @@ class RAGDatabase:
         self,
         db_path: str = None,
         model_name: str = EMBEDDING_MODEL_NAME,
+        reranker_model_name: str | None = RERANKING_MODEL_NAME,
         weaviate_url: str = WEAVIATE_URL,
         weaviate_port: int = WEAVIATE_PORT,
     ):
@@ -84,6 +91,9 @@ class RAGDatabase:
                 None.
             model_name (str, optional): Name of the HuggingFace model to use for
                 embeddings. Defaults to EMBEDDING_MODEL_NAME.
+            reranker_model_name (str | None, optional): name of the HuggingFace
+                model to use for reranking. Defaults to None (no reranking is
+                used).
             weaviate_url (str, optional): URL of the Weaviate instance. Defaults
                 to WEAVIATE_URL.
             weaviate_port (int, optional): Port of the Weaviate instance. Defaults
@@ -91,10 +101,12 @@ class RAGDatabase:
         """
         self.db_path = db_path
         self.model_name = model_name
+        self.reranker_model_name = reranker_model_name
         self.weaviate_url = weaviate_url
         self.weaviate_port = weaviate_port
 
         self.embedding_model = None
+        self.reranking_model = None
         self.weaviate_client = None
 
     def connect_to_database(self):
@@ -135,7 +147,13 @@ class RAGDatabase:
             paper["authors"] = (
                 paper["authors"].split(",") if paper["authors"] else []
             )
-            paper["authors"] = [paper["authors"][i] for i in author_idxs]
+            ordered_authors = {
+                author_idxs[i]: paper["authors"][i]
+                for i in range(len(author_idxs))
+            }
+            paper["authors"] = [
+                ordered_authors[i] for i in range(len(author_idxs))
+            ]
             for replace in REPLACE_WITH_NOTHING:
                 paper["abstract"] = paper["abstract"].replace(replace, "")
             papers.append(paper)
@@ -485,9 +503,19 @@ class RAGDatabase:
         """
         Initialize the embedding model.
         """
-        logger.info(f"Loading embedding model: {self.model_name}")
         if not self.embedding_model:
+            logger.info(f"Loading embedding model: {self.model_name}")
             self.embedding_model = SentenceTransformer(self.model_name)
+        if not self.reranking_model:
+            if self.reranker_model_name:
+                logger.info(
+                    f"Loading reranking model: {self.reranker_model_name}"
+                )
+                self.reranking_model = CrossEncoder(self.reranker_model_name)
+            else:
+                logger.warning(
+                    "Reranking model not specified. Reranking will not be used."
+                )
         logger.info("Embedding model loaded")
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
@@ -783,7 +811,31 @@ class RAGDatabase:
             **query_kwargs,
         )
 
+        if self.reranker_model_name:
+            reranking_query = (
+                f'Is the following text relevant to the query "{text}"?'
+            )
+            reranking_scores = self.reranking_model.predict(
+                [
+                    (reranking_query, o.properties["text"])
+                    for o in result.objects
+                ]
+            )
+            logger.info(
+                "Reranking scores: min=%.6f, max=%.6f",
+                min(reranking_scores),
+                max(reranking_scores),
+            )
+            M, m = reranking_scores.max(), reranking_scores.min()
+            reranking_scores = (reranking_scores - m) / (M - m)
+            for i, score in enumerate(reranking_scores):
+                result.objects[i].metadata.reranking_score = score
+            result.objects.sort(
+                key=lambda x: x.metadata.reranking_score, reverse=True
+            )
+
         if group_by_paper:
+            logger.info("Grouping results by paper")
             grouped_results = {}
             for object in result.objects:
                 score = object.metadata.score
@@ -797,6 +849,12 @@ class RAGDatabase:
                 }
                 if "keyword" not in explain_score:
                     explain_score["keyword"] = 0
+                if hasattr(object.metadata, "reranking_score"):
+                    explain_score["reranking_score"] = (
+                        object.metadata.reranking_score
+                    )
+                else:
+                    explain_score["reranking_score"] = None
                 paper_id = object.properties["paper_id"]
                 if paper_id not in grouped_results:
                     abstract_obj = object.references["information"].objects[0]
