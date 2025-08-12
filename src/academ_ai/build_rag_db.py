@@ -583,7 +583,6 @@ class RAGDatabase:
         paper_chunks: list[PaperChunk],
         uuid_correspondence: dict[int, str],
         batch_size: int = DEFAULT_BATCH_SIZE,
-        existing_paper_ids: set[int] | None = None,
     ):
         """
         Index paper chunks in Weaviate with embeddings.
@@ -599,22 +598,6 @@ class RAGDatabase:
                 raise RuntimeError(
                     "Failed to connect to Weaviate or initialize schema"
                 )
-
-        # Filter out already indexed papers if in incremental mode
-        if existing_paper_ids:
-            original_count = len(paper_chunks)
-            paper_chunks = [
-                chunk
-                for chunk in paper_chunks
-                if chunk.paper_id not in existing_paper_ids
-            ]
-            logger.info(
-                f"Skipping {original_count - len(paper_chunks)} already indexed papers"
-            )
-
-            if not paper_chunks:
-                logger.info("All papers already indexed")
-                return
 
         # Process in batches
         with self.weaviate_client.collections.get(
@@ -696,80 +679,108 @@ class RAGDatabase:
         if not self.initialize_schema():
             return False
 
+        # Get papers with authors
+        papers = self.get_papers_with_authors()
+        if not papers:
+            logger.error("No papers found in the database")
+            return False
+        logger.info(f"Found {len(papers)} papers")
+
         if incremental:
             existing_paper_ids = self.get_existing_paper_ids()
             existing_abstract_ids = self.get_existing_paper_ids(
                 collection_name="PaperAbstract"
             )
+            papers_for_chunks = [
+                paper
+                for paper in papers
+                if paper["id"] not in existing_paper_ids
+            ]
+            papers_for_abstracts = [
+                paper
+                for paper in papers
+                if paper["id"] not in existing_abstract_ids
+            ]
+            logger.info(
+                f"Found {len(papers_for_chunks)} new papers for chunking"
+            )
+            logger.info(
+                f"Found {len(papers_for_abstracts)} new papers for abstracting"
+            )
         else:
             existing_paper_ids = None
             existing_abstract_ids = None
+            papers_for_chunks = papers
+            papers_for_abstracts = papers
+
+        if len(papers_for_chunks) == 0 and len(papers_for_abstracts) == 0:
+            logger.info("No new papers to index")
+            return True
 
         try:
-            # Initialize embedding model
-            self.initialize_embedding_model()
-
-            # Get papers with authors
-            papers = self.get_papers_with_authors()
-            if not papers:
-                logger.error("No papers found in the database")
-                return False
-
-            # Create paper chunks
-            paper_chunks = self.create_paper_chunks(papers)
-            if not paper_chunks:
-                logger.error("No paper chunks were created")
-                return False
-
-            logger.info(f"Transferring abstracts to Weaviate")
             abstracts = self.weaviate_client.collections.get("PaperAbstract")
-            with abstracts.batch.fixed_size(batch_size=batch_size) as batch:
-                for paper in tqdm(papers, desc="Adding abstracts"):
-                    if paper["id"] in existing_abstract_ids:
-                        continue
-                    batch.add_object(
-                        properties={
-                            "paper_id": paper["id"],
-                            "title": paper["title"],
-                            "abstract": paper["abstract"],
-                            "category": paper["category"],
-                            "authors": paper["authors"],
-                            "doi": paper["doi"],
-                            "source": paper["source"],
-                        }
-                    )
+            if len(papers_for_abstracts) > 0:
+                logger.info(f"Transferring abstracts to Weaviate")
+                with abstracts.batch.fixed_size(batch_size=batch_size) as batch:
+                    for paper in tqdm(
+                        papers_for_abstracts, desc="Adding abstracts"
+                    ):
+                        batch.add_object(
+                            properties={
+                                "paper_id": paper["id"],
+                                "title": paper["title"],
+                                "abstract": paper["abstract"],
+                                "category": paper["category"],
+                                "authors": paper["authors"],
+                                "doi": paper["doi"],
+                                "source": paper["source"],
+                            }
+                        )
+
             uuid_correspondence = {
                 o.properties["paper_id"]: o.uuid for o in abstracts.iterator()
             }
 
-            logger.info(
-                f"Transferred {len(uuid_correspondence)} abstracts to Weaviate"
-            )
+            if len(papers_for_chunks) > 0:
 
-            # Index chunks
-            self.index_paper_chunks(
-                paper_chunks,
-                uuid_correspondence=uuid_correspondence,
-                batch_size=batch_size,
-                existing_paper_ids=existing_paper_ids,
-            )
+                # Initialize embedding model
+                self.initialize_embedding_model()
 
-            # Get stats
-            if hasattr(self, "weaviate_client"):
-                try:
-                    result = self.weaviate_client.collections.get(
-                        "PaperChunk"
-                    ).aggregate.over_all(total_count=True)
+                # Create paper chunks
+                paper_chunks = self.create_paper_chunks(papers_for_chunks)
+                if not paper_chunks:
+                    logger.error("No paper chunks were created")
+                    return False
 
-                    logger.info(
-                        f"Total chunks in database: {result.total_count}"
-                    )
-                except Exception as e:
-                    logger.warning(f"Could not get chunk count: {e}")
+                logger.info(
+                    f"Transferred {len(uuid_correspondence)} abstracts to Weaviate"
+                )
 
-            logger.info("RAG database build completed successfully")
+                # Index chunks
+                self.index_paper_chunks(
+                    paper_chunks,
+                    uuid_correspondence=uuid_correspondence,
+                    batch_size=batch_size,
+                )
+
+                # Get stats
+                if hasattr(self, "weaviate_client"):
+                    try:
+                        result = self.weaviate_client.collections.get(
+                            "PaperChunk"
+                        ).aggregate.over_all(total_count=True)
+
+                        logger.info(
+                            f"Total chunks in database: {result.total_count}"
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not get chunk count: {e}")
+
+                logger.info("RAG database build completed successfully")
+            else:
+                logger.info("No new papers to index")
+
             return True
-
         except Exception as e:
             logger.error(f"Error building RAG database: {e}", exc_info=True)
             return False
