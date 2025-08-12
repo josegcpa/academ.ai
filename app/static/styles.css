@@ -204,7 +204,6 @@ input[type="range"] {
 #results {
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
     margin-top: var(--spacing-lg);
     row-gap: var(--spacing-lg);
@@ -216,11 +215,19 @@ input[type="range"] {
     border-radius: var(--border-radius);
     transition: var(--transition);
     border: 1px solid #ccc;
+    width: 90%
+}
+    
+@media (max-width: 600px) {
+    .paper-card {
+        width: 80%;
+    }
 }
 
 .paper-card .paper-content {
     font-size: var(--font-size-sm);
     line-height: var(--line-height-md);
+    overflow-wrap: break-word;
 }
 
 .paper-title {
@@ -340,9 +347,6 @@ input[type="range"] {
         gap: var(--spacing-xxs);
         margin-top: var(--spacing-xs);
         margin-bottom: var(--spacing-xs);
-    }
-
-    #tooltip .paper-quote {
     }
 
     #tooltip .paper-quote-container {
