@@ -105,9 +105,10 @@ class RAGDatabase:
         self.weaviate_url = weaviate_url
         self.weaviate_port = weaviate_port
 
-        self.embedding_model = None
-        self.reranking_model = None
         self.weaviate_client = None
+
+        self._embedding_model = None
+        self._reranker_model = None
 
     def connect_to_database(self):
         """
@@ -127,9 +128,9 @@ class RAGDatabase:
             abstract = abstract.split(string)[0]
         for replace in REPLACE_WITH_NOTHING:
             abstract = abstract.replace(replace, "")
-        for regex in [r"O_TBL.*C_TBL "]:
+        for regex in [r"O_TBL.*C_TBL", r"(?<=\n) "]:
             abstract = re.sub(regex, "", abstract.strip())
-        return abstract
+        return abstract.strip()
 
     def get_papers_with_authors(self) -> list[dict[str, Any]]:
         """
@@ -165,6 +166,8 @@ class RAGDatabase:
                 ordered_authors[i] for i in range(len(author_idxs))
             ]
             paper["abstract"] = self.process_abstract(paper["abstract"])
+            if len(paper["abstract"]) == 0:
+                continue
             papers.append(paper)
 
         logger.info(f"Retrieved {len(papers)} papers from database")
@@ -217,7 +220,7 @@ class RAGDatabase:
                 curr_n_sentences = 0
                 curr_ch_len = []
 
-        if curr_chunk and sum(curr_ch_len) >= min_chunk_length:
+        if curr_chunk:
             chunks.append(curr_chunk)
 
         chunked_sents, chunked_spans = [], []
@@ -466,6 +469,21 @@ class RAGDatabase:
             logger.error(f"Failed to create collection: {e}")
             return False
 
+    def initialize_embedding_model(self) -> bool:
+        """
+        Initializes the embedding model and reranking model.
+
+        Returns:
+            bool: True if models were initialized, False on error
+        """
+        try:
+            self.embedding_model
+            self.reranker_model
+            return True
+        except Exception as e:
+            logger.error(f"Failed to initialize models: {e}")
+            return False
+
     def delete_schema(self, confirm: bool = False) -> bool:
         """
         Delete the Weaviate schema if it exists.
@@ -508,24 +526,37 @@ class RAGDatabase:
 
         return True
 
-    def initialize_embedding_model(self):
+    @property
+    def embedding_model(self) -> SentenceTransformer:
         """
-        Initialize the embedding model.
+        Get the embedding model with lazy loading.
+
+        Returns:
+            SentenceTransformer: The embedding model.
         """
-        if not self.embedding_model:
+        if self._embedding_model is None:
             logger.info(f"Loading embedding model: {self.model_name}")
-            self.embedding_model = SentenceTransformer(self.model_name)
-        if not self.reranking_model:
-            if self.reranker_model_name:
-                logger.info(
-                    f"Loading reranking model: {self.reranker_model_name}"
-                )
-                self.reranking_model = CrossEncoder(self.reranker_model_name)
-            else:
-                logger.warning(
-                    "Reranking model not specified. Reranking will not be used."
-                )
-        logger.info("Embedding model loaded")
+            self._embedding_model = SentenceTransformer(self.model_name)
+        return self._embedding_model
+
+    @property
+    def reranker_model(self) -> CrossEncoder | None:
+        """
+        Get the reranking model with lazy loading.
+
+        Returns:
+            CrossEncoder | None: The reranking model or None if no reranking
+                model is specified.
+        """
+        if not self.reranker_model_name:
+            logger.warning(
+                "Reranking model not specified. Reranking will not be used."
+            )
+            return None
+        if self._reranker_model is None:
+            logger.info(f"Loading reranking model: {self.reranker_model_name}")
+            self._reranker_model = CrossEncoder(self.reranker_model_name)
+        return self._reranker_model
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """
@@ -537,8 +568,6 @@ class RAGDatabase:
         Returns:
             List of embedding vectors
         """
-        if not self.embedding_model:
-            self.initialize_embedding_model()
 
         embeddings = self.embedding_model.encode(
             texts,
@@ -570,7 +599,7 @@ class RAGDatabase:
                     item.properties["paper_id"]
                     for item in self.weaviate_client.collections.get(
                         collection_name
-                    ).iterator()
+                    ).iterator(return_properties=["paper_id"])
                 ]
             )
             return all_paper_ids
@@ -691,16 +720,13 @@ class RAGDatabase:
             existing_abstract_ids = self.get_existing_paper_ids(
                 collection_name="PaperAbstract"
             )
-            papers_for_chunks = [
-                paper
-                for paper in papers
-                if paper["id"] not in existing_paper_ids
-            ]
-            papers_for_abstracts = [
-                paper
-                for paper in papers
-                if paper["id"] not in existing_abstract_ids
-            ]
+            papers_for_chunks = []
+            papers_for_abstracts = []
+            for paper in papers:
+                if paper["id"] not in existing_paper_ids:
+                    papers_for_chunks.append(paper)
+                if paper["id"] not in existing_abstract_ids:
+                    papers_for_abstracts.append(paper)
             logger.info(
                 f"Found {len(papers_for_chunks)} new papers for chunking"
             )
@@ -737,24 +763,21 @@ class RAGDatabase:
                             }
                         )
 
+                logger.info(
+                    f"Transferred {len(papers_for_abstracts)} abstracts to Weaviate"
+                )
+
             uuid_correspondence = {
-                o.properties["paper_id"]: o.uuid for o in abstracts.iterator()
+                o.properties["paper_id"]: o.uuid
+                for o in abstracts.iterator(return_properties=["paper_id"])
             }
 
             if len(papers_for_chunks) > 0:
-
-                # Initialize embedding model
-                self.initialize_embedding_model()
-
                 # Create paper chunks
                 paper_chunks = self.create_paper_chunks(papers_for_chunks)
                 if not paper_chunks:
                     logger.error("No paper chunks were created")
                     return False
-
-                logger.info(
-                    f"Transferred {len(uuid_correspondence)} abstracts to Weaviate"
-                )
 
                 # Index chunks
                 self.index_paper_chunks(
@@ -814,7 +837,10 @@ class RAGDatabase:
         """
         # Initialize embedding model
         self.connect_to_weaviate()
-        self.initialize_embedding_model()
+
+        # Initialise models
+        self.embedding_model
+        self.reranker_model
 
         if query_kwargs is None:
             query_kwargs = {}
@@ -835,7 +861,7 @@ class RAGDatabase:
             reranking_query = (
                 f'Is the following text relevant to the query "{text}"?'
             )
-            reranking_scores = self.reranking_model.predict(
+            reranking_scores = self.reranker_model.predict(
                 [
                     (reranking_query, o.properties["text"])
                     for o in result.objects
