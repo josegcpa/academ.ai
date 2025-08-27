@@ -1,19 +1,44 @@
 ---
 services:
-  weaviate:
+  build_db:
+    container_name: academic-search-build_db
+    build:
+      context: .
+      dockerfile: Dockerfile.academ_ai
     command:
-    - --host
-    - 0.0.0.0
-    - --port
-    - ${WEAVIATE_PORT}
-    - --scheme
-    - http
+      - uv
+      - run
+      - python
+      - -m
+      - academ_ai.build_rag_db
+      - --db_path
+      - /app/data/papers.db
+    env_file: .env
+    environment:
+      - WEAVIATE_URL=weaviate
+    depends_on:
+      - weaviate
+    networks:
+      - academ-search
+    volumes:
+      - local_data:/app/data
+    restart: no
+
+  weaviate:
+    container_name: academic-search-weaviate
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - ${WEAVIATE_PORT:-8080}
+      - --scheme
+      - http
     image: cr.weaviate.io/semitechnologies/weaviate:1.32.1
     ports:
-    - ${WEAVIATE_PORT}:${WEAVIATE_PORT}
-    - ${GRPC_PORT}:50051
+      - ${WEAVIATE_PORT:-8080}:${WEAVIATE_PORT:-8080}
+      - ${GRPC_PORT:-50051}:50051
     volumes:
-    - weaviate_data:/var/lib/weaviate
+      - weaviate_data:/var/lib/weaviate
     restart: on-failure:0
     environment:
       QUERY_DEFAULTS_LIMIT: 25
@@ -22,6 +47,68 @@ services:
       ENABLE_API_BASED_MODULES: 'true'
       ENABLE_MODULES: 'text2vec-ollama,generative-ollama'
       CLUSTER_HOSTNAME: 'node1'
+    networks:
+      - academ-search
+
+  api:
+    container_name: academic-search-api
+    build:
+      context: .
+      dockerfile: Dockerfile.academ_ai
+    command:
+      - uv
+      - run
+      - python
+      - -m
+      - academ_ai.api
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - WEAVIATE_URL=weaviate
+    volumes:
+      - local_data:/app/data
+    depends_on:
+      build_db:
+        condition: service_completed_successfully
+    networks:
+      - academ-search
+    restart: unless-stopped
+
+  frontend:
+    container_name: academic-search-frontend
+    build:
+      context: .
+      dockerfile: Dockerfile.serve_app
+    command:
+      - gunicorn
+      - app:app
+      - -b
+      - 0.0.0.0:${SERVE_PORT:-1234}
+    ports:
+      - "${SERVE_PORT:-1234}:${SERVE_PORT:-1234}"
+    env_file: .env
+    depends_on:
+      - api
+    networks:
+      - academ-search
+    restart: unless-stopped
+
+networks:
+  academ-search:
+    driver: bridge
 
 volumes:
   weaviate_data:
+  local_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+  local_frontend:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./app
