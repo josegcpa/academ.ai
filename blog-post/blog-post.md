@@ -92,6 +92,10 @@ Seeing everything in action feels pretty smooth - this is a search over nearly 1
 
 ### Vector database
 
+I quite liked the design for Weaviate - while the setup is more cumbersome than Chroma or other local vector databases, the whole process feels super smooth with minimal Docker setup [^2]. The one drawback that kind of annoyed me - I could not, for the life of me, get something as simple as direct access to the database itself, leading to simple queries (how many records are in my collection, for instance) taking a long time by having to [read a lot of objects](https://docs.weaviate.io/weaviate/manage-objects/read-all-objects).
+
+[^2]: if you really aren't into Docker and would rather have a super portable file with your vector database - I really think that [Chroma](https://www.trychroma.com/) is a good solution. There are more alternatives ([LlamaIndex](https://www.llamaindex.ai/) comes to mind as a pretty good alternative).
+
 ### Embedding and reranking models
 
 ### API
