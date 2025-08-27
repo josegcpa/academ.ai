@@ -86,7 +86,7 @@ Hover states highlight the passages which were retrieved from the embedding data
 
 Seeing everything in action feels pretty smooth - this is a search over nearly 1,000,000 chunks over a little under 100,000 papers in a matter of seconds. Having options over the search parameters is pretty useful - knowing how many results should be retrieved and the relative weights for the semantic and keyword search gives users a finer grained control over the results.
 
-<video src="assets/1.mp4" controls />
+<video src="assets/1.mp4" controls /></video>
 
 ## Explaining some choices
 
