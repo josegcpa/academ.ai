@@ -36,7 +36,7 @@ On top of this, exact matching (or a [variation](https://www.geeksforgeeks.org/n
 
 ## Implementing a local retrieval system
 
-**Note:** all of this is somewhat similar to what Semantic Scholar does through their API services - I am not sure how their search functionalities work, but I would assume they rely on keyword matching with some minimal amount of semantic search. What I present below is, in essence, the hacker's version of that with fewer resources/papers. In any case this is scalable using the [Semantic Scholar data API](https://www.semanticscholar.org/product/api/tutorial).
+**Note:** all of this is somewhat similar to what Semantic Scholar does through their API services - I am not sure how their search functionalities work, but I would assume they rely on keyword matching with a minimal amount of semantic search. What I present below is, in essence, the hacker's version of that with fewer resources/papers. In any case this is scalable using the [Semantic Scholar data API](https://www.semanticscholar.org/product/api/tutorial).
 
 ### 1. Getting the data
 
@@ -66,7 +66,7 @@ Once again, SentenceTransformers came to the rescue - this time with [a really s
 
 ### 5. Making a pretty thing
 
-I am a fan of some minimal web development, so I coded a small frontend using the classic HTML/CSS/JS stack. I know the cool kids are all using React and Tailwind, but it would be an overkill for such a small project. Plus, if it becomes a necessity I can always switch to a more modern stack.
+I am a fan of minimal web development, so I coded a small frontend using the classic HTML/CSS/JS stack. I know the cool kids are all using React and Tailwind, but it would be an overkill for such a small project. Plus, if it becomes a necessity I can always switch to a more modern stack.
 
 ## Using a local retrieval system
 
