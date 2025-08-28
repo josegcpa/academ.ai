@@ -1,5 +1,9 @@
 # Implementing local retrieval system for academic papers
 
+## tl;dr
+
+I developed a semantic search engine that runs locally and comes packaged with a nice and simple interface. I used it to look for papers across bioRxiv and medRxiv. The code is open source and is available [here](https://github.com/josegcpa/academic-search).
+
 ## Context
 
 An issue which a lot of researchers run into are the relatively outdated search engines powering academic manuscript databases. I felt a bit frustrated with how the relatively poor support for semantic searchers: oftentimes, I got stuck having to think of the ideal keywords to retrieve the papers I was looking for. On the other hand, popular search engines have widely adopted everything related to semantic search (the comically subpar "AI summaries" will remain undiscussed here).
@@ -114,3 +118,4 @@ The API was the easiest part for me - ever since [FastAPI](https://fastapi.tiang
 
 ## Wrapping up
 
+This was a really fun side project - it allowed me to consolidate from an implementation perspective a lot of things which I had been reading about and which I had tested on smaller projects (particularly RAG aplications). In general this is the kind of building I really appreciate - developing something that I know I will use and that solves a problem I had for a long time.
