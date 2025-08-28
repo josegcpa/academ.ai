@@ -98,4 +98,19 @@ I quite liked the design for Weaviate - while the setup is more cumbersome than 
 
 ### Embedding and reranking models
 
+This choice was fairly simple for me - I quite like HuggingFace in general so I simply went with it. The `SentenceTransformers` package makes it really simple to work with these sorts of operations and they provide support for both generic text embedding and cross-encoder models which can be used for reranking. Other options would include [`Ollama`](https://ollama.com/search), which has fairly good feature encoding mechanisms but no cross-encoders (it is however my go to for local text generation), or [LangChain](https://www.langchain.com/) which is a super powerful package to perform all things LLM- and agent-related. Why not go for these? They offer similar (or fewer) capabilities to `SentenceTransformers` and are less specific for the task at hand.
+
+#### Why not late interaction?
+
+The great question for me here is this one.
+
+Of course, there are more modern alternatives which could further improve this - late interaction models such as [ColBERT](https://github.com/stanford-futuredata/ColBERT) have really good feature extraction support and [RAGatouille](https://github.com/AnswerDotAI/RAGatouille) makes using these sorts of models a breeze.
+
+However, late-interaction is a bit of a hassle - unlike other strategies which use chunks, late interaction uses entire documents and tends to require packaged and hard-to-port solutions for the database itself. This is, of course, not an issue if you are more or less agnostic about the database you want to use, but the options they tend to offer are, in my experience, a bit limited and hard to adapt to your favourite vector database.
+
 ### API
+
+The API was the easiest part for me - ever since [FastAPI](https://fastapi.tiangolo.com/) arrived to the scene I have not used anything else for these sorts of applications. There are other alternatives ([flask](https://flask.palletsprojects.com/en/stable/) is a pretty obvious one for the Pythonistas among us), but FastAPI provides a really tailored experience for APIs and the implementation and deployment is light and invariably straightforward.
+
+## Wrapping up
+
