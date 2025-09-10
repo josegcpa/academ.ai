@@ -73,7 +73,13 @@ def retrive_biorxiv_medrxiv(source: str, date_start: datetime, date_end: datetim
                 article["date"], "%Y-%m-%d").date()
             collection[idx]["authors_clean"] = []
             for names in article["authors"].split(";"):
-                names = names.split(",")
+                if len(names) == 0:
+                    continue
+                if "," in names:
+                    names = names.split(",")
+                else:
+                    names = names.split()
+                    names = [names[-1], " ".join(names[:-1])]
                 if len(names) == 1:
                     continue
                 authors.append({

@@ -95,7 +95,6 @@ def main():
     for day_idx, (output, kwargs) in enumerate(
         map_fn(retrieve_biorxiv_medrxiv_mp_wrapper, all_date_kwargs)
     ):
-        logger.info(f"Inserting {len(output)} papers")
         current_date = kwargs["date_start"]
         with sqlite3.connect(args.output_db) as conn:
             five_days_ago = datetime.now() - timedelta(days=5)
@@ -105,6 +104,7 @@ def main():
                     "dates_with_no_papers",
                     {"date": current_date, "source": args.source},
                 )
+            logger.info(f"Inserting {len(output)} papers")
             for data_entry in output:
                 paper = data_entry["article"]
                 authors = data_entry["authors"]

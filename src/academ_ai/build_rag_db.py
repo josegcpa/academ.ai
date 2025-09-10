@@ -54,6 +54,7 @@ logger.info("WEAVIATE_PORT: %s", WEAVIATE_PORT)
 logger.info("GRPC_PORT: %s", GRPC_PORT)
 logger.info("EMBEDDING_MODEL_NAME: %s", EMBEDDING_MODEL_NAME)
 
+
 @dataclass
 class PaperChunk:
     """
