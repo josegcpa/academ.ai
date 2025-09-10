@@ -2,6 +2,7 @@ import sqlite3
 from pydantic import BaseModel
 from datetime import datetime
 
+
 class Paper(BaseModel):
     title: str
     abstract: str
@@ -18,9 +19,11 @@ class Paper(BaseModel):
     preprint: bool
     published_doi: str
 
+
 class DatesWithNoPapers(BaseModel):
     date: datetime
     source: str
+
 
 class Author(BaseModel):
     first_name: str
@@ -29,10 +32,12 @@ class Author(BaseModel):
     paper_id: int
     corresponding: bool
 
+
 class AuthorAffiliation(BaseModel):
     author_id: int
     institution: str
     date_source: datetime
+
 
 def data_model_to_sqlite(table_name: str, data_model: BaseModel) -> dict:
     dict_schema = data_model.model_json_schema()
@@ -58,9 +63,14 @@ def create_db(db_path: str):
         cursor = conn.cursor()
         cursor.execute(data_model_to_sqlite("papers", Paper))
         cursor.execute(data_model_to_sqlite("authors", Author))
-        cursor.execute(data_model_to_sqlite("author_affiliations", AuthorAffiliation))
-        cursor.execute(data_model_to_sqlite("dates_with_no_papers", DatesWithNoPapers))
+        cursor.execute(
+            data_model_to_sqlite("author_affiliations", AuthorAffiliation)
+        )
+        cursor.execute(
+            data_model_to_sqlite("dates_with_no_papers", DatesWithNoPapers)
+        )
         conn.commit()
+
 
 def insert_into_table(conn, table_name: str, data_dict: dict[str]):
     cursor = conn.cursor()
