@@ -85,7 +85,7 @@ class AbstractResponse(BaseModel):
     spans: list[tuple[int, int]]
     doi: str
     scores: list[float]
-    explain_scores: list[dict[str, float]]
+    explain_scores: list[dict[str, float | None]]
 
 
 class QueryResponse(BaseModel):
