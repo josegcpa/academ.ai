@@ -1,3 +1,7 @@
+"""
+Builds a RAG database from a SQLite papers database.
+"""
+
 import re
 import os
 import sqlite3
