@@ -6,36 +6,41 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 RELEVANT_CHAR = string.ascii_letters + string.digits + string.punctuation + " "
-REPLACE_DICT = {
-    "ü": "u"
-}
+REPLACE_DICT = {"ü": "u"}
 
 ARTICLE_KEYS = [
-    "title", 
-    "abstract", 
-    "journal", 
-    "funding", 
+    "title",
+    "abstract",
+    "journal",
+    "funding",
     "license",
-    "category", 
+    "category",
     "date_source",
-    "doi", 
-    "xml", 
+    "doi",
+    "xml",
     "xml_format",
-    "source", 
-    "date_added", 
-    "preprint", 
-    "published_doi"
+    "source",
+    "date_added",
+    "preprint",
+    "published_doi",
 ]
 
-def process_string(str_input: str)->str:
+
+def process_string(str_input: str) -> str:
     # transform non-ascii characters to ascii
     for k, v in REPLACE_DICT.items():
         str_input = str_input.replace(k, v)
-    str_input = str_input.encode('ascii', 'ignore').decode('ascii')
-    str_input = ''.join(c for c in str_input.strip() if c in RELEVANT_CHAR)
+    str_input = str_input.encode("ascii", "ignore").decode("ascii")
+    str_input = "".join(c for c in str_input.strip() if c in RELEVANT_CHAR)
     return str_input
 
-def retrive_biorxiv_medrxiv(source: str, date_start: datetime, date_end: datetime, stop_after_first: bool = False):
+
+def retrive_biorxiv_medrxiv(
+    source: str,
+    date_start: datetime,
+    date_end: datetime,
+    stop_after_first: bool = False,
+):
     assert source in ["biorxiv", "medrxiv"]
     URL = f"https://api.biorxiv.org/details/{source}/{date_start.strftime('%Y-%m-%d')}/{date_end.strftime('%Y-%m-%d')}"
     logger.info(f"Retrieving {URL}")
@@ -70,7 +75,8 @@ def retrive_biorxiv_medrxiv(source: str, date_start: datetime, date_end: datetim
             authors = []
             author_affiliations = []
             collection[idx]["date_source"] = datetime.strptime(
-                article["date"], "%Y-%m-%d").date()
+                article["date"], "%Y-%m-%d"
+            ).date()
             collection[idx]["authors_clean"] = []
             for names in article["authors"].split(";"):
                 if len(names) == 0:
@@ -79,23 +85,33 @@ def retrive_biorxiv_medrxiv(source: str, date_start: datetime, date_end: datetim
                     names = names.split(",")
                 else:
                     names = names.split()
-                    names = [names[-1], " ".join(names[:-1])]
-                if len(names) == 1:
-                    continue
-                authors.append({
-                    "last_name": process_string(names[0]), 
-                    "first_name": process_string(names[1]),
-                })
-                corresponding = (
-                    authors[-1]["last_name"] 
-                    in process_string(collection[idx]["author_corresponding"])
+                    if len(names) == 1:
+                        names = [names[0], ""]
+                    elif len(names) == 0:
+                        names = ["", ""]
+                    else:
+                        names = [names[-1], " ".join(names[:-1])]
+                authors.append(
+                    {
+                        "last_name": process_string(names[0]),
+                        "first_name": process_string(names[1]),
+                    }
+                )
+                corresponding = authors[-1]["last_name"] in process_string(
+                    collection[idx]["author_corresponding"]
                 )
                 authors[-1]["corresponding"] = corresponding
                 if corresponding:
-                    author_affiliations.append({
-                        "institution": process_string(collection[idx]["author_corresponding_institution"]),
-                        "date_source": collection[idx]["date_source"]
-                    })
+                    author_affiliations.append(
+                        {
+                            "institution": process_string(
+                                collection[idx][
+                                    "author_corresponding_institution"
+                                ]
+                            ),
+                            "date_source": collection[idx]["date_source"],
+                        }
+                    )
             collection[idx]["preprint"] = True
             collection[idx]["published_doi"] = collection[idx]["published"]
             collection[idx]["xml"] = collection[idx]["jatsxml"]
@@ -107,22 +123,23 @@ def retrive_biorxiv_medrxiv(source: str, date_start: datetime, date_end: datetim
                 collection[idx]["funding"] = str(collection[idx]["funding"])
             else:
                 collection[idx]["funding"] = ""
-            output_collection.append({
-                "article": {
-                    k: collection[idx][k] 
-                    for k in ARTICLE_KEYS
-                },
-                "authors": authors,
-                "author_affiliations": author_affiliations,
-            })
+            output_collection.append(
+                {
+                    "article": {k: collection[idx][k] for k in ARTICLE_KEYS},
+                    "authors": authors,
+                    "author_affiliations": author_affiliations,
+                }
+            )
         cursor += len(collection)
         logger.info(f"Retrieved {len(output_collection)} papers")
         if stop_after_first:
             return output_collection
     return output_collection
 
+
 if __name__ == "__main__":
     from pprint import pprint
+
     pprint(
         retrive_biorxiv_medrxiv(
             "biorxiv", datetime(2022, 1, 1), datetime(2022, 1, 31)
